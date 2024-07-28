@@ -1,0 +1,11 @@
+# gizli bilgilerin yer aldığı dosya
+config.py
+
+# üretilen çıktıların olduğu klasör
+exports
+
+# indirilenlerin olduğu klasör
+downloads
+
+# Telegram session dosyaları
+*.session*
