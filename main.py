@@ -30,7 +30,7 @@ async def main():
     daily_date = None
     voices, videos = [], []
 
-    async for message in client.iter_messages(selected_chat.id, reverse=False):
+    async for message in client.iter_messages(selected_chat.id, reverse=True):
         if not message.video_note and not message.voice:
             continue
 
@@ -62,9 +62,6 @@ async def main():
 
         # eğer gün değişti ise günlük dosyaları oluştur
         if daily_date and daily_date.date() != message.date.date():
-            # son tarihten başladığı için videoları ve sesleri tersine çevir
-            videos.reverse()
-            voices.reverse()
 
             daily_name = format_date(daily_date)
 
