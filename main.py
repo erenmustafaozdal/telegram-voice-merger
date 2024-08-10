@@ -1,4 +1,4 @@
-from moviepy.editor import concatenate_audioclips, AudioFileClip, concatenate_videoclips, VideoFileClip
+from moviepy.editor import concatenate_audioclips, AudioFileClip, concatenate_videoclips, VideoFileClip, ColorClip
 from telethon.sync import TelegramClient
 from tqdm import tqdm
 import os
@@ -55,7 +55,7 @@ async def main():
     daily_date = None
     voices = []
     videos = []
-    async for message in client.iter_messages(selected_chat.id, reverse=True):
+    async for message in client.iter_messages(selected_chat.id, reverse=False):
         # eğer mesaj videolu mesaj veya sesli mesaj değilse geç
         if not message.video_note and not message.voice:
             continue
@@ -80,6 +80,19 @@ async def main():
             await message.download_media(voice_path, progress_callback=callback)
             pbar.close()
 
+            # Siyah ekranlı bir video oluştur
+            audio_clip = AudioFileClip(voice_path)
+            black_clip = ColorClip(
+                size=(640, 480),
+                color=(0, 0, 0),
+                duration=audio_clip.duration
+            )
+            black_clip = black_clip.set_audio(audio_clip).set_fps(24)
+
+            video_path = f"{downloads_dir}/voice_{message.id}.mp4"
+            black_clip.write_videofile(
+                video_path, codec="libx264", audio_codec="aac")
+
         # mesaj tarihi None değilse ve yeni mesaj tarihi ile aynı değilse dosyayı oluştur
         if daily_date and daily_date.date() != message.date.date():
             daily_name = daily_date.strftime("%Y-%m-%d")
@@ -100,14 +113,8 @@ async def main():
             voices.clear()
             videos.clear()
 
-        # videolu mesajsa
-        if message.video_note:
-            voices.append(AudioFileClip(voice_path))
-            videos.append(VideoFileClip(video_path))
-
-        # sesli mesaj varsa
-        if message.voice:
-            voices.append(AudioFileClip(voice_path))
+        voices.append(AudioFileClip(voice_path))
+        videos.append(VideoFileClip(video_path))
 
         # tarihi yenile
         daily_date = message.date
