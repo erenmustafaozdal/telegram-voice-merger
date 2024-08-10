@@ -9,3 +9,6 @@ downloads
 
 # Telegram session dosyaları
 *.session*
+
+# Pycache dosyaları
+__pycache__
