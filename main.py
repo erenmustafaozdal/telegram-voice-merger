@@ -83,7 +83,7 @@ async def main():
             # Siyah ekranlı bir video oluştur
             audio_clip = AudioFileClip(voice_path)
             black_clip = ColorClip(
-                size=(640, 480),
+                size=(384, 384),
                 color=(0, 0, 0),
                 duration=audio_clip.duration
             )
@@ -95,6 +95,10 @@ async def main():
 
         # mesaj tarihi None değilse ve yeni mesaj tarihi ile aynı değilse dosyayı oluştur
         if daily_date and daily_date.date() != message.date.date():
+            # son tarihten başladığı için videoları ve sesleri tersine çevir
+            videos.reverse()
+            voices.reverse()
+
             daily_name = daily_date.strftime("%Y-%m-%d")
 
             # eğer sesler varsa
@@ -107,7 +111,9 @@ async def main():
             if videos:
                 daily_video_clip = concatenate_videoclips(videos)
                 daily_video_clip.write_videofile(
-                    f"{exports_dir}/{daily_name}.mp4")
+                    f"{exports_dir}/{daily_name}.mp4",
+                    threads=8, fps=24, preset="ultrafast",
+                )
 
             # verileri boşalt
             voices.clear()
