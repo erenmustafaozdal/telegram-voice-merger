@@ -1,130 +1,90 @@
-from moviepy.editor import concatenate_audioclips, AudioFileClip, concatenate_videoclips, VideoFileClip, ColorClip
 from telethon.sync import TelegramClient
-from tqdm import tqdm
-import os
-from config import *
-
-
-# Geçici ses dosyası adı
-TEMP_AUDIO_FILE = 'temp_audio.wav'
-
-# Telegram istemcisini oluştur
-client = TelegramClient('telegram-voice-merger', api_id, api_hash)
-
-downloads_dir = "./downloads"
-if not os.path.exists(downloads_dir):
-    os.mkdir(downloads_dir)
-
-exports_dir = "./exports"
-if not os.path.exists(exports_dir):
-    os.mkdir(exports_dir)
-
-
-# Printing download progress
-def callback(current, total):
-    global pbar
-    global prev_curr
-    pbar.update(current-prev_curr)
-    prev_curr = current
-
-
-async def get_chats():
-    chats = await client.get_dialogs()
-    for i, chat in enumerate(chats, start=1):
-        print(f"{i}. {chat.title}")
-    return chats
+from moviepy.editor import AudioFileClip, VideoFileClip
+from config import api_id, api_hash, session_name, downloads_dir, exports_dir
+from download_manager import DownloadManager
+from media_processor import MediaProcessor
+from utils import format_date, path_is_exists
 
 
 async def main():
-    global pbar
-    global prev_curr
-
+    client = TelegramClient(session_name, api_id, api_hash)
     await client.start()
 
-    # Kullanıcıya sohbet listesini göster
-    print("Sohbet listesi:")
-    chats = await get_chats()
+    # Sohbetleri al
+    chats = await client.get_dialogs()
+    for i, chat in enumerate(chats, start=1):
+        print(f"{i}. {chat.title}")
 
-    # Kullanıcıdan bir sohbet seçmesini iste
+    # Sohbet seçimi
     selected_chat_index = int(input("Bir sohbet seçin (sayı): "))
     selected_chat = chats[selected_chat_index - 1]
 
     print(f"Seçilen sohbet: {selected_chat.title}")
 
-    # Seçilen sohbetin tüm sesli ve videolu mesajlarını birleştir
+    new_downloads_dir = f"{downloads_dir}/{selected_chat.title}"
+    new_exports_dir = f"{exports_dir}/{selected_chat.title}"
+
+    download_manager = DownloadManager(client, downloads_dir=new_downloads_dir)
+    media = MediaProcessor(exports_dir=new_exports_dir)
+
     daily_date = None
-    voices = []
-    videos = []
+    voices, videos = [], []
+
     async for message in client.iter_messages(selected_chat.id, reverse=False):
-        # eğer mesaj videolu mesaj veya sesli mesaj değilse geç
         if not message.video_note and not message.voice:
             continue
 
-        # videolu mesajsa
+        # eğer videolu mesajsa
         if message.video_note:
-            video_path = f"{downloads_dir}/video_{message.id}.mp4"
-            voice_path = f"{downloads_dir}/video_{message.id}.wav"
+            video_path = f"{new_downloads_dir}/video_{message.id}.mp4"
+            voice_path = f"{new_downloads_dir}/video_{message.id}.wav"
 
-            prev_curr = 0
-            pbar = tqdm(total=message.document.size, unit='B', unit_scale=True)
-            await message.download_media(video_path, progress_callback=callback)
-            pbar.close()
-            os.system(f'ffmpeg -i {video_path} -q:a 0 -map a {voice_path}')
+            # eğer video yoksa indir
+            if not path_is_exists(video_path):
+                await download_manager.download_media(message, video_path)
 
-        # sesli mesaj varsa
+            # eğer yoksa videoyu sese dönüştür
+            if not path_is_exists(voice_path):
+                media.extract_audio_from_video(video_path, voice_path)
+
+        # eğer sesli mesajsa
         if message.voice:
-            voice_path = f"{downloads_dir}/voice_{message.id}.wav"
+            video_path = f"{new_downloads_dir}/voice_{message.id}.mp4"
+            voice_path = f"{new_downloads_dir}/voice_{message.id}.wav"
 
-            prev_curr = 0
-            pbar = tqdm(total=message.document.size, unit='B', unit_scale=True)
-            await message.download_media(voice_path, progress_callback=callback)
-            pbar.close()
+            # eğer ses dosyası yoksa indir
+            if not path_is_exists(voice_path):
+                await download_manager.download_media(message, voice_path)
 
-            # Siyah ekranlı bir video oluştur
-            audio_clip = AudioFileClip(voice_path)
-            black_clip = ColorClip(
-                size=(384, 384),
-                color=(0, 0, 0),
-                duration=audio_clip.duration
-            )
-            black_clip = black_clip.set_audio(audio_clip).set_fps(24)
+            # eğer yoksa sesten siyah video üret
+            if not path_is_exists(video_path):
+                media.create_temp_clip(voice_path, video_path)
 
-            video_path = f"{downloads_dir}/voice_{message.id}.mp4"
-            black_clip.write_videofile(
-                video_path, codec="libx264", audio_codec="aac")
-
-        # mesaj tarihi None değilse ve yeni mesaj tarihi ile aynı değilse dosyayı oluştur
+        # eğer gün değişti ise günlük dosyaları oluştur
         if daily_date and daily_date.date() != message.date.date():
             # son tarihten başladığı için videoları ve sesleri tersine çevir
             videos.reverse()
             voices.reverse()
 
-            daily_name = daily_date.strftime("%Y-%m-%d")
+            daily_name = format_date(daily_date)
 
-            # eğer sesler varsa
-            if voices:
-                daily_voice_clip = concatenate_audioclips(voices)
-                daily_voice_clip.write_audiofile(
-                    f"{exports_dir}/{daily_name}.wav")
+            e_video_path = f"{new_exports_dir}/{daily_name}.mp4"
+            e_voice_path = f"{new_exports_dir}/{daily_name}.wav"
+            # eğer daha önce oluşturulmadıysa işlemleri yap
+            if voices and not path_is_exists(e_voice_path):
+                media.concatenate_clips(voices, e_voice_path, is_audio=True)
 
-            # eğer videolar varsa
-            if videos:
-                daily_video_clip = concatenate_videoclips(videos)
-                daily_video_clip.write_videofile(
-                    f"{exports_dir}/{daily_name}.mp4",
-                    threads=8, fps=24, preset="ultrafast",
-                )
+            if videos and not path_is_exists(e_video_path):
+                media.concatenate_clips(videos, e_video_path, is_audio=False)
 
-            # verileri boşalt
             voices.clear()
             videos.clear()
 
         voices.append(AudioFileClip(voice_path))
-        videos.append(VideoFileClip(video_path))
+        videos.append(video_path)
 
-        # tarihi yenile
         daily_date = message.date
 
 if __name__ == "__main__":
-    client.loop.run_until_complete(main())
-    client.disconnect()
+    import asyncio
+    asyncio.run(main())
